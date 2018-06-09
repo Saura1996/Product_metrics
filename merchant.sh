@@ -7,7 +7,8 @@ v_dataset_name=project_product_metrics;
 date
 
 ## scheduling_merchant_table_part1 loading. Replace existing
-v_query_merchant_table_part1="SELECT
+v_query_merchant_table_part1="#legacySQL
+SELECT
   c.merchantID_j1 Merchant_id,
   city,
   merchantname,
@@ -50,7 +51,7 @@ LEFT JOIN (
   SELECT
     STRING(a._id) DealID_3,
     CASE
-      WHEN o_type = 'RAF' THEN 1'
+      WHEN o_type = 'RAF' THEN 1
       ELSE 0
     END is.raffle,
     cat_id,
@@ -89,9 +90,8 @@ GROUP EACH BY
   6,
   7,
   8,
-  9
-"
-##echo -e "Query: \n $v_query_merchant_table_part1_new";
+  9"
+##echo -e "Query: \n $v_query_merchant_table_part1";
 
 
 tableName=merchant_part1
@@ -106,7 +106,57 @@ wait $v_first_pid;
 
 
 ## Rating_source_nb loading. Replace existing
-v_query_rating_source_nb="SELECT
+v_query_rating_source_zt="SELECT   
+       toMemberId merchantid,
+       source,
+       rating,
+       
+     FROM
+       FLATTEN([big-query-1233:Atom.ratings_and_reviews],RatingContext.vouchers.orderId)
+       WHERE source = 'ZOMATO' OR source = 'TRIPADVISOR'
+       GROUP BY 1,2,3"
+
+##echo -e "Query: \n $v_query_rating_source_zt";
+
+tableName=rating_source_zt
+v_destination_tbl="$v_dataset_name.${tableName}";
+echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_rating_source_zt\""
+bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_rating_source_zt" &
+v_first_pid=$!
+v_merch_sdl_pids+=" $!"
+
+wait $v_first_pid;
+
+
+
+#Rating_source_nearbuy_without_avg. Replace existing
+v_query_source_nb_without_avg="SELECT
+       RatingContext.vouchers.orderId orderid2,
+       toMemberId merchantid,
+       RatingContext.vouchers.dealId  dealid,
+       source,
+       rating
+       
+     FROM
+       FLATTEN([big-query-1233:Atom.ratings_and_reviews],RatingContext.vouchers.orderId)
+       WHERE source = 'NEARBUY'
+       GROUP BY 1,2,3,4,5
+"
+
+##echo -e "Query: \n $v_query_source_nb_without_avg";
+
+tableName=rating_source_nb_without_avg
+v_destination_tbl="$v_dataset_name.${tableName}";
+echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_source_nb_without_avg\""
+bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_source_nb_without_avg" &
+v_first_pid=$!
+v_BI_sdl_pids+=" $!"
+
+wait $v_first_pid;
+
+
+#Rating source nearbuy_avg. Replace existing
+v_query_rating_source_nb="SSELECT
  *
 FROM (
  SELECT
@@ -137,7 +187,7 @@ FROM (
        dealid,
        source
      FROM
-       [big-query-1233:temp.dealratingnb])b
+       [big-query-1233:project_product_metrics.rating_source_nb_without_avg])b
    ON
      a.orderid = b.orderid2)
  GROUP BY
@@ -147,7 +197,9 @@ FROM (
    4)
 WHERE
  avgRating IS NOT NULL
-AND merchantid not in (SELECT merchantid FROM [big-query-1233:temp.dealratingZT] ) "
+AND merchantid not in (SELECT merchantid FROM [big-query-1233:project_product_metrics.rating_source_zt] )
+
+"
 
 ##echo -e "Query: \n $v_query_rating_source_nb";
 
@@ -161,32 +213,9 @@ v_merch_sdl_pids+=" $!"
 wait $v_first_pid;
 
 
+#merchant_table_part2 loading. Replacing existing
 
-#Rating_source_zt. Replace existing
-v_query_source_zt="SELECT   
-       toMemberId merchantid,
-       source,
-       rating,
-       
-     FROM
-       FLATTEN([big-query-1233:Atom.ratings_and_reviews],RatingContext.vouchers.orderId)
-       WHERE source = 'ZOMATO' OR source = 'TRIPADVISOR'
-       GROUP BY 1,2,3 "
-
-##echo -e "Query: \n $v_query_rating_source_zt";
-
-tableName=rating_source_zt
-v_destination_tbl="$v_dataset_name.${tableName}";
-echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_rating_source_zt\""
-bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_rating_source_zt" &
-v_first_pid=$!
-v_BI_sdl_pids+=" $!"
-
-wait $v_first_pid;
-
-
-#scheduling merchant_part2. Replace existing
-v_query_merchant_table_part2="SELECT
+v_query_merchant_table_part_2="SELECT
   a.date_1 date,
   D_id deal_id,
   M_id,
@@ -231,14 +260,14 @@ FROM
     )b
     ON 
     a.M_id = b.merchantid
-GROUP BY  1,2,3,4,5,6 "
+GROUP BY  1,2,3,4,5,6"
 
-##echo -e "Query: \n $v_query_merchant_table_part2_new";
+##echo -e "Query: \n $v_query_merchant_table_part2;
 
 tableName=merchant_part2
 v_destination_tbl="$v_dataset_name.${tableName}";
-echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_merchant_table_part2\""
-bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_merchant_table_part2" &
+echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_merchant_table_part_2\""
+bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_merchant_table_part_2" &
 v_first_pid=$!
 v_merch_sdl_pids+=" $!"
 
@@ -247,7 +276,7 @@ wait $v_first_pid;
 
 #merchant_table_final loading. Replacing existing
 
-v_query_merchant_final="SELECT date,
+v_query_merchant_table_final="SELECT date,
   a.Merchant_id	 merchantid,
   merchantname,
   city merchant_city,
@@ -273,19 +302,18 @@ INNER JOIN (
 ON 
 a.Merchant_id	= b.Merchant_ID	
 AND 
-a.DealID_j2 = b.deal_id "
+a.DealID_j2 = b.deal_id"
 
-##echo -e "Query: \n $v_query_merchant_final;
+##echo -e "Query: \n $v_query_merchant_table_final;
 
 tableName=merchant_final
 v_destination_tbl="$v_dataset_name.${tableName}";
-echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_merchant_final\""
-bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_merchant_final" &
+echo "bq query --maximum_billing_tier 100 --allow_large_results=1  --replace -n 1 --destination_table=$v_destination_tbl \"$v_query_merchant_table_final\""
+bq query --maximum_billing_tier 100 --allow_large_results=1 --replace -n 0 --destination_table=$v_destination_tbl "$v_query_merchant_table_final" &
 v_first_pid=$!
 v_merch_sdl_pids+=" $!"
 
 wait $v_first_pid;
-
 
 
 
@@ -305,9 +333,4 @@ fi
 echo "Table refresh status of merchant_table_part1, table with rating source as nearbuy, table with rating source zt, merchant_table_part2, merchant_table_final in project_product_metrics dataset:$v_table_status`date`" | mail -s "$v_table_status" saurabh.deosarkar@nearbuy
 
 exit 0
-
-
-
-
-
 
